@@ -1,0 +1,106 @@
+---
+title: "p8105_hw6_cl4776"
+author: "Chenxi Liu"
+date: "2025-12-01"
+output: github_document
+---
+# Problem 1 
+```{r}
+
+library(tidyverse)
+library(broom)
+library(purrr)
+
+homicides <- readr::read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv")
+
+
+```
+
+```{r}
+homicides_clean <- homicides |>
+mutate(
+city_state = str_c(city, ", ", state),
+resolved   = if_else(disposition == "Closed by arrest", 1, 0),
+victim_age = as.numeric(victim_age),
+victim_sex = factor(victim_sex, levels = c("Female", "Male")),
+victim_race = factor(victim_race)
+) |>
+filter(
+!city_state %in% c("Dallas, TX", "Phoenix, AZ",
+"Kansas City, MO", "Tulsa, AL"),
+victim_race %in% c("White", "Black")
+)
+
+summary(homicides_clean$victim_age)
+count(homicides_clean, city_state)
+baltimore <- homicides_clean |>
+filter(city_state == "Baltimore, MD")
+
+balt_glm <- glm(
+resolved ~ victim_age + victim_sex + victim_race,
+family = binomial,
+data   = baltimore
+)
+
+balt_tidy <- balt_glm |>
+tidy(conf.int = TRUE, exponentiate = TRUE)
+
+balt_tidy
+
+balt_OR_male <- balt_tidy |>
+filter(term == "victim_sexMale") |>
+select(term, estimate, conf.low, conf.high)
+
+balt_OR_male
+```
+
+```{r}
+city_models <- homicides_clean |>
+group_by(city_state) |>
+nest() |>
+mutate(
+model = map(
+data,
+~ glm(
+resolved ~ victim_age + victim_sex + victim_race,
+family = binomial,
+data = .x
+)
+),
+tidied = map(
+model,
+~ tidy(.x, conf.int = TRUE, exponentiate = TRUE)
+)
+) |>
+unnest(tidied) |>
+filter(term == "victim_sexMale") |>
+select(city_state, estimate, conf.low, conf.high) |>
+ungroup()
+
+city_models
+city_OR_plot <- city_models |>
+arrange(estimate) |>
+mutate(city_state = factor(city_state, levels = city_state)) |>
+ggplot(aes(x = city_state, y = estimate)) +
+geom_hline(yintercept = 1, linetype = "dashed") +
+geom_point() +
+geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.1) +
+coord_flip() +
+labs(
+title = "Adjusted Odds Ratios for Solving Homicides\nMale vs Female Victims",
+x = "City",
+y = "Odds Ratio (male vs female victims)"
+) +
+theme_minimal()
+theme_minimal(base_size = 10) +
+theme(
+  axis.text.y = element_text(size = 7),
+  plot.title = element_text(size = 12, face = "bold")
+)
+
+city_OR_plot
+```
+
+The plot displays the adjusted odds ratio (OR) for solving homicides comparing male to female victims across major U.S. cities, controlling for victim age and race. Most cities have OR estimates close to 1 with confidence intervals crossing 1, indicating little evidence of a meaningful difference in clearance rates between male and female victims. A few cities show ORs above or below 1, but wide confidence intervals reflect substantial uncertainty or small sample sizes. An odds ratio of 1 indicates no difference in clearance probability between male and female victims, while values above or below 1 represent higher or lower odds of being solved for male victims, respectively. Overall, the results suggest that after adjustment, victim sex is not a strong predictor of whether a homicide is solved in most cities.
+
+
