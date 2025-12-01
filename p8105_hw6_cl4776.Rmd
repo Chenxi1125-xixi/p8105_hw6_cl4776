@@ -5,7 +5,7 @@ date: "2025-12-01"
 output: github_document
 ---
 # Problem 1 
-```{r}
+```{r,knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE)}
 
 library(tidyverse)
 library(broom)
@@ -92,15 +92,67 @@ x = "City",
 y = "Odds Ratio (male vs female victims)"
 ) +
 theme_minimal()
-theme_minimal(base_size = 10) +
-theme(
-  axis.text.y = element_text(size = 7),
-  plot.title = element_text(size = 12, face = "bold")
-)
 
 city_OR_plot
 ```
 
 The plot displays the adjusted odds ratio (OR) for solving homicides comparing male to female victims across major U.S. cities, controlling for victim age and race. Most cities have OR estimates close to 1 with confidence intervals crossing 1, indicating little evidence of a meaningful difference in clearance rates between male and female victims. A few cities show ORs above or below 1, but wide confidence intervals reflect substantial uncertainty or small sample sizes. An odds ratio of 1 indicates no difference in clearance probability between male and female victims, while values above or below 1 represent higher or lower odds of being solved for male victims, respectively. Overall, the results suggest that after adjustment, victim sex is not a strong predictor of whether a homicide is solved in most cities.
 
+# Problem 2
+```{r}
+library(p8105.datasets)
+data("weather_df")
+```
+```{r}
+weather_clean <- weather_df |>
+drop_na(tmax, tmin, prcp)
+set.seed(1)
+
+bootstrap_results <- tibble(i = 1:5000) |>
+mutate(
+sample_df = map(i, ~ weather_clean |> slice_sample(prop = 1, replace = TRUE)),
+models = map(sample_df, ~ lm(tmax ~ tmin + prcp, data = .x)),
+glance_out = map(models, glance),
+tidy_out   = map(models, tidy)
+) |>
+mutate(
+r_squared = map_dbl(glance_out, ~ .x$r.squared),
+beta_prod = map_dfr(tidy_out, ~
+.x |>
+filter(term %in% c("tmin", "prcp")) |>
+summarise(prod = prod(estimate))
+)$prod
+)
+
+bootstrap_results |>
+ggplot(aes(x = r_squared)) +
+geom_histogram(bins = 40, color = "white") +
+theme_minimal() +
+labs(
+title = "Bootstrap Distribution of R²",
+x = "R²",
+y = "Count"
+)
+```
+
+```{r}
+bootstrap_results |>
+ggplot(aes(x = beta_prod)) +
+geom_histogram(bins = 40, color = "white") +
+theme_minimal() +
+labs(
+title = "Bootstrap Distribution of β₁ × β₂",
+x = "β₁ × β₂ (tmin × prcp)",
+y = "Count"
+)
+r2_CI <- quantile(bootstrap_results$r_squared, probs = c(0.025, 0.975))
+beta_prod_CI <- quantile(bootstrap_results$beta_prod, probs = c(0.025, 0.975))
+
+r2_CI
+beta_prod_CI
+```
+
+The bootstrap distribution for R² is approximately symmetric and centered near the value obtained from the original data, indicating that the fitted model explains a consistent proportion of the variation in tmax across bootstrap samples. The distribution shows moderate variability, and the 95% confidence interval reflects reasonable uncertainty in the proportion of variance explained by tmin and prcp.
+
+The distribution of β₁ × β₂ (the product of the coefficients for tmin and prcp) is more skewed, with most values near zero but a noticeable tail, likely because prcp has a small and variable effect. This skewness suggests that the interaction-like quantity β₁β₂ is less stable across bootstrap samples. The 95% confidence interval captures this skewed uncertainty and includes values close to zero.
 
