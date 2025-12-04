@@ -13,7 +13,6 @@ library(purrr)
 
 homicides <- readr::read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv")
 
-
 ```
 
 ```{r}
@@ -136,20 +135,41 @@ y = "Count"
 ```
 
 ```{r}
-bootstrap_results |>
-ggplot(aes(x = beta_prod)) +
-geom_histogram(bins = 40, color = "white") +
-theme_minimal() +
-labs(
-title = "Bootstrap Distribution of β₁ × β₂",
-x = "β₁ × β₂ (tmin × prcp)",
-y = "Count"
-)
-r2_CI <- quantile(bootstrap_results$r_squared, probs = c(0.025, 0.975))
-beta_prod_CI <- quantile(bootstrap_results$beta_prod, probs = c(0.025, 0.975))
+boot_estimates <- function(data) {
+  fit <- lm(tmax ~ tmin + prcp, data = data)
+
+  beta1 <- coef(fit)["tmin"]
+  beta2 <- coef(fit)["prcp"]
+
+  tibble(
+    r_squared  = glance(fit)$r.squared,
+    beta_ratio = beta1 / beta2
+  )
+}
+
+bootstrap_ratio <- purrr::map_dfr(1:5000, ~ {
+  sample_df <- weather_clean |> 
+    slice_sample(prop = 1, replace = TRUE)
+  boot_estimates(sample_df)
+})
+
+bootstrap_ratio |>
+  ggplot(aes(x = beta_ratio)) +
+  geom_histogram(bins = 40, color = "white") +
+  theme_minimal() +
+  labs(
+    title = "Bootstrap Distribution of β₁ / β₂",
+    x = "β₁ / β₂ (tmin ÷ prcp)",
+    y = "Count"
+  )
+
+r2_CI <- quantile(bootstrap_ratio$r_squared,  c(0.025, 0.975))
+beta_ratio_CI <- quantile(bootstrap_ratio$beta_ratio, c(0.025, 0.975))
 
 r2_CI
-beta_prod_CI
+beta_ratio_CI
+
+
 ```
 
 The bootstrap distribution for R² is approximately symmetric and centered near the value obtained from the original data, indicating that the fitted model explains a consistent proportion of the variation in tmax across bootstrap samples. The distribution shows moderate variability, and the 95% confidence interval reflects reasonable uncertainty in the proportion of variance explained by tmin and prcp.
